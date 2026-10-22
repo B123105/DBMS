@@ -1,0 +1,206 @@
+CREATE DATABASE ParkingManagement;
+
+USE ParkingManagement;
+
+-- 2. Create Parking Slots Table
+CREATE TABLE ParkingSlots (
+    slot_id INT PRIMARY KEY AUTO_INCREMENT,
+    slot_number VARCHAR(10) UNIQUE NOT NULL,
+    vehicle_type VARCHAR(20) NOT NULL,
+    status VARCHAR(20) DEFAULT 'Available'
+);
+
+-- 3. Create Vehicles Table
+CREATE TABLE Vehicles (
+    vehicle_id INT PRIMARY KEY AUTO_INCREMENT,
+    vehicle_number VARCHAR(20) UNIQUE NOT NULL,
+    owner_name VARCHAR(100) NOT NULL,
+    phone VARCHAR(15),
+    vehicle_type VARCHAR(20) NOT NULL
+);
+
+-- 4. Create Parking Records Table
+CREATE TABLE ParkingRecords (
+    record_id INT PRIMARY KEY AUTO_INCREMENT,
+    vehicle_id INT NOT NULL,
+    slot_id INT NOT NULL,
+    entry_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    exit_time DATETIME NULL,
+    parking_fee DECIMAL(10,2) DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'Parked',
+    FOREIGN KEY (vehicle_id) REFERENCES Vehicles(vehicle_id),
+    FOREIGN KEY (slot_id) REFERENCES ParkingSlots(slot_id)
+);
+
+-- 5. Insert Parking Slots
+INSERT INTO ParkingSlots (slot_number, vehicle_type)
+VALUES
+('S01', 'Car'),
+('S02', 'Car'),
+('S03', 'Bike'),
+('S04', 'Bike'),
+('S05', 'Car');
+
+-- 6. Insert Sample Vehicles
+INSERT INTO Vehicles
+(vehicle_number, owner_name, phone, vehicle_type)
+VALUES
+('PB10AB1234', 'Rahul Sharma', '9876543210', 'Car'),
+('PB10CD5678', 'Aman Kumar', '9876543211', 'Bike'),
+('PB10EF9012', 'Neha Singh', '9876543212', 'Car');
+
+-- 7. View All Parking Slots
+SELECT * FROM ParkingSlots;
+
+-- 8. View All Registered Vehicles
+SELECT * FROM Vehicles;
+
+-- 9. View Available Parking Slots
+SELECT *
+FROM ParkingSlots
+WHERE status = 'Available';
+
+-- 10. Vehicle Entry
+-- First, register the vehicle if it is not already registered.
+-- Example: Vehicle ID 1 enters slot S01.
+
+UPDATE ParkingSlots
+SET status = 'Occupied'
+WHERE slot_number = 'S01'
+  AND status = 'Available'
+  AND vehicle_type = 'Car';
+
+INSERT INTO ParkingRecords (vehicle_id, slot_id)
+SELECT 1, slot_id
+FROM ParkingSlots
+WHERE slot_number = 'S01'
+  AND status = 'Occupied'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM ParkingRecords
+      WHERE slot_id = ParkingSlots.slot_id
+        AND status = 'Parked'
+  );
+
+-- 11. View Currently Parked Vehicles
+SELECT
+    PR.record_id,
+    V.vehicle_number,
+    V.owner_name,
+    V.vehicle_type,
+    PS.slot_number,
+    PR.entry_time
+FROM ParkingRecords PR
+JOIN Vehicles V ON PR.vehicle_id = V.vehicle_id
+JOIN ParkingSlots PS ON PR.slot_id = PS.slot_id
+WHERE PR.status = 'Parked';
+
+-- 12. Vehicle Exit and Parking Fee Calculation
+-- Example: Vehicle with record_id = 1 exits.
+-- Car: Rs. 50 per hour
+-- Bike: Rs. 20 per hour
+-- Minimum charge: One hour
+
+UPDATE ParkingRecords PR
+JOIN Vehicles V ON PR.vehicle_id = V.vehicle_id
+SET
+    PR.exit_time = CURRENT_TIMESTAMP,
+    PR.parking_fee =
+        GREATEST(
+            1,
+            CEIL(
+                TIMESTAMPDIFF(
+                    MINUTE, PR.entry_time, CURRENT_TIMESTAMP
+                ) / 60.0
+            )
+        ) *
+        CASE
+            WHEN V.vehicle_type = 'Car' THEN 50
+            WHEN V.vehicle_type = 'Bike' THEN 20
+            ELSE 30
+        END,
+    PR.status = 'Exited'
+WHERE PR.record_id = 1
+  AND PR.status = 'Parked';
+
+-- 13. Make the Parking Slot Available Again
+UPDATE ParkingSlots
+SET status = 'Available'
+WHERE slot_id = (
+    SELECT slot_id
+    FROM ParkingRecords
+    WHERE record_id = 1
+      AND status = 'Exited'
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM ParkingRecords
+    WHERE ParkingRecords.slot_id = ParkingSlots.slot_id
+      AND ParkingRecords.status = 'Parked'
+);
+
+-- 14. View Complete Parking History
+SELECT
+    PR.record_id,
+    V.vehicle_number,
+    V.owner_name,
+    PS.slot_number,
+    PR.entry_time,
+    PR.exit_time,
+    PR.parking_fee,
+    PR.status
+FROM ParkingRecords PR
+JOIN Vehicles V ON PR.vehicle_id = V.vehicle_id
+JOIN ParkingSlots PS ON PR.slot_id = PS.slot_id
+ORDER BY PR.record_id DESC;
+
+-- 15. Total Parking Income
+SELECT SUM(parking_fee) AS Total_Income
+FROM ParkingRecords
+WHERE status = 'Exited';
+
+-- 16. Count Currently Parked Vehicles
+SELECT COUNT(*) AS Total_Parked_Vehicles
+FROM ParkingRecords
+WHERE status = 'Parked';
+
+-- 17. Count Available Slots
+SELECT COUNT(*) AS Available_Slots
+FROM ParkingSlots
+WHERE status = 'Available';
+
+-- 18. Daily Parking Income Report
+SELECT
+    DATE(exit_time) AS Parking_Date,
+    SUM(parking_fee) AS Daily_Income
+FROM ParkingRecords
+WHERE status = 'Exited'
+GROUP BY DATE(exit_time)
+ORDER BY Parking_Date DESC;
+
+-- 19. Search Vehicle by Number
+SELECT *
+FROM Vehicles
+WHERE vehicle_number = 'PB10AB1234';
+
+-- 20. Delete a Vehicle
+-- Only delete if it has no parking history.
+DELETE FROM Vehicles
+WHERE vehicle_id = 3
+AND NOT EXISTS (
+    SELECT 1
+    FROM ParkingRecords
+    WHERE ParkingRecords.vehicle_id = Vehicles.vehicle_id
+);
+
+-- 21. Final Database Summary
+SELECT 'Total Slots' AS Description, COUNT(*) AS Total
+FROM ParkingSlots
+UNION ALL
+SELECT 'Available Slots', COUNT(*)
+FROM ParkingSlots
+WHERE status = 'Available'
+UNION ALL
+SELECT 'Occupied Slots', COUNT(*)
+FROM ParkingSlots
+WHERE status = 'Occupied';
